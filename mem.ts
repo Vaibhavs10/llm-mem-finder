@@ -1,4 +1,4 @@
-iconst quantizationOptions = {
+const quantizationOptions = {
   "1-bit": 1,
   "2-bit": 2,
   "3-bit": 3,
