@@ -1,0 +1,21 @@
+{
+  "name": "llm-mem-finder",
+  "version": "1.0.0",
+  "description": "Calculate memory requirements for LLM models",
+  "main": "dist/calculate.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/calculate.js",
+    "test": "node --loader ts-node/esm calculate.ts"
+  },
+  "dependencies": {
+    "@huggingface/inference": "^3.1.5",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.0"
+  },
+  "type": "module"
+}

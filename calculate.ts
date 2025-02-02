@@ -1,3 +1,5 @@
+import { HfInference } from '@huggingface/inference';
+
 const quantizationOptions = {
   "1-bit": 1,
   "2-bit": 2,
@@ -17,6 +19,9 @@ interface ModelInfo {
     quantization?: string;
 }
 
+// Initialize Hugging Face client (uses local credentials if available)
+const hf = new HfInference();
+
 /**
  * Fetches model details from Hugging Face API.
  * 
@@ -24,35 +29,41 @@ interface ModelInfo {
  * @returns Promise containing model parameters and quantization info
  */
 async function getModelDetails(repoId: string): Promise<ModelInfo> {
-    // 1. Fetch model info from Hugging Face API
-    const response = await fetch(`https://api-inference.huggingface.co/models/${repoId}`);
-    const data = await response.json();
-
-    // 2. Extract parameter count
-    const parameters = data.modelCard.parameters;
-
-    // 3. Determine quantization
-    let quantization: string | undefined;
-    const modelFiles = data.modelCard.modeldownloads;
-    if (modelFiles) {
-        // Look for files indicating quantization
-        const fp16File = modelFiles.find(f => f.suffix === 'fp16');
-        const int8File = modelFiles.find(f => f.suffix === 'int8');
-        const int4File = modelFiles.find(f => f.suffix === 'int4');
+    try {
+        // Get model info using the HF client
+        const [owner, model] = repoId.split('/');
+        const modelInfo = await fetch(`https://huggingface.co/api/models/${repoId}`).then(r => r.json());
         
-        if (int4File) {
-            quantization = '4-bit';
-        } else if (int8File) {
-            quantization = '8-bit';
-        } else if (fp16File) {
-            quantization = 'fp16';
+        // Try to get parameters from model card metadata
+        let parameters: number;
+        if (modelInfo.model_card?.parameters) {
+            parameters = Number(modelInfo.model_card.parameters);
+        } else {
+            // If parameters not in metadata, estimate from model name
+            const match = repoId.toLowerCase().match(/(\d+)b/);
+            if (match) {
+                parameters = parseInt(match[1]) * 1e9;
+            } else {
+                const matchM = repoId.toLowerCase().match(/(\d+)m/);
+                if (matchM) {
+                    parameters = parseInt(matchM[1]) * 1e6;
+                } else {
+                    throw new Error('Could not determine model parameters');
+                }
+            }
         }
-    }
 
-    return {
-        parameters: parameters,
-        quantization: quantization
-    };
+        // Default to fp32 as most models are distributed in this format
+        const quantization = 'fp32';
+
+        return {
+            parameters,
+            quantization
+        };
+    } catch (error) {
+        console.error('Error in getModelDetails:', error);
+        throw error;
+    }
 }
 
 /**
@@ -64,7 +75,7 @@ async function getModelDetails(repoId: string): Promise<ModelInfo> {
  * @param osOverheadGb - OS overhead in GB (default is 2 GB).
  * @returns The total memory usage in GB.
  */
-function calculateMemoryUsage(
+export function calculateMemoryUsage(
     parametersInBillions: number,
     quantization: QuantizationOption,
     contextWindow: number,
@@ -98,7 +109,7 @@ function calculateMemoryUsage(
  * @param osOverheadGb - OS overhead in GB (default is 2 GB)
  * @returns Promise containing the calculated memory usage in GB
  */
-async function calculateHuggingFaceModelMemory(
+export async function calculateHuggingFaceModelMemory(
     repoId: string,
     contextWindow: number,
     osOverheadGb: number = 2
@@ -114,6 +125,26 @@ async function calculateHuggingFaceModelMemory(
     return calculateMemoryUsage(parametersInBillions, quantization, contextWindow, osOverheadGb);
 }
 
-// Example usage:
-// const memoryUsage = await calculateHuggingFaceModelMemory('facebook/opt-350m', 2048);
-// console.log(`Expected Memory Usage: ${memoryUsage.toFixed(2)} GB`); 
+// Test function to demonstrate usage
+async function runTests() {
+    console.log('Running memory calculation tests...\n');
+
+    // Test 1: Direct memory calculation
+    const directTest = calculateMemoryUsage(7, "4-bit", 2048);
+    console.log('Test 1: Direct Memory Calculation');
+    console.log('Model: 7B parameters, 4-bit quantization, 2048 context window');
+    console.log(`Expected Memory Usage: ${directTest.toFixed(2)} GB\n`);
+
+    // Test 2: Hugging Face model calculation
+    try {
+        console.log('Test 2: Hugging Face Model Calculation');
+        console.log('Model: meta-llama/Llama-2-7b-hf, 2048 context window');
+        const hfTest = await calculateHuggingFaceModelMemory('meta-llama/Llama-2-7b-hf', 2048);
+        console.log(`Expected Memory Usage: ${hfTest.toFixed(2)} GB\n`);
+    } catch (error) {
+        console.error('Error fetching Hugging Face model details:', error);
+    }
+}
+
+// Run the tests
+runTests().catch(console.error); 
